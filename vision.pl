@@ -16,7 +16,7 @@ use again 'IO::Handle' => [];
 use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 
-our $VERSION = '0.02';
+our $VERSION = '0.022';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -296,7 +296,7 @@ sub rewrite_rules {
 }
 
 sub rewrite_exempts {
-	write_json_to 'exempt.json', { map +{ $_ => [keys %{$exempt_accounts{$_}}] }, keys %exempt_accounts };
+	write_json_to 'exempt.json', { map +($_ => [sort keys %{$exempt_accounts{$_}}]), keys %exempt_accounts };
 }
 
 sub rewrite_blacklist {
