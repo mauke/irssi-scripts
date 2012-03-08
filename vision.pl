@@ -16,7 +16,7 @@ use again 'IO::Handle' => [];
 use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 
-our $VERSION = '0.023';
+our $VERSION = '0.024';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -392,8 +392,12 @@ sub generic_handler {
 	my $levencheck;
 	my @matched_rules;
 
-	my $account = eval { Irssi::Script::track_account::account_for($server, $nick) };
+	my $account = eval { Irssi::Script::track_account::account_for($server, $nick) } || '';
 	unless ($account && $exempt_accounts{$server->{chatnet}}{$cfold->($account)}) {
+		if ($event eq 'join') {
+			$data = "$nick!$user\@$host?$account#" . (eval { Irssi::Script::track_account::realname_for($server, $nick) } || '');
+		}
+
 		my @ids = @{$rules_by_event{$event} || []};
 
 		for my $rule (@rules{@ids}) {
