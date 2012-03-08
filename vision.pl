@@ -16,7 +16,7 @@ use again 'IO::Handle' => [];
 use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 
-our $VERSION = '0.022';
+our $VERSION = '0.023';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -317,6 +317,19 @@ our %severity_map = (
 	high => 4,
 );
 
+sub severity_fancy {
+	my ($x) = @_;
+	my $c =
+		$x eq 'debug'  ? '13' :
+		$x eq 'info'   ? '12' :
+		$x eq 'low'    ? '09' :
+		$x eq 'medium' ? '08' :
+		$x eq 'high'   ? '04' :
+		''
+	;
+	"\cC$c\x{25CF}\cC$x"
+}
+
 our %last_report;
 
 sub report_match {
@@ -351,7 +364,7 @@ sub report_match {
 		''
 	}eg;
 
-	my $msg = "[$rule->{severity}] " . ($channel ? "[\cB$channel\cB] " : "") . "\cB$sender->[0]\cB - $format";
+	my $msg = "[${\severity_fancy $rule->{severity}}] " . ($channel ? "[\cB$channel\cB] " : "") . "\cB$sender->[0]\cB - $format";
 
 	if (my $chan = $server->channel_find($out)) {
 		$chan->command("say $msg");
