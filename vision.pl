@@ -617,10 +617,11 @@ for my $signal ('message public', 'message private') {
 			$reply->("$arg is on: @nicks");
 		} elsif ($cmd eq 'rehash') {
 			$aflags =~ /a/ or return;
-			reread_config;
+			eval { reread_config; 1 } or return $reply->("something done fucked up");
 			$reply->("ok");
 		} elsif ($cmd eq 'reload') {
 			$aflags =~ /a/ or return;
+			eval { reread_config; 1 } or return $reply->("something done fucked up");
 			Irssi::signal_emit 'reload script next', __PACKAGE__;
 			$reply->("...");
 		} elsif ($cmd eq 'exempt') {
