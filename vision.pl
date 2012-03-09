@@ -16,7 +16,7 @@ use again 'IO::Handle' => [];
 use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 
-our $VERSION = '0.024';
+our $VERSION = '0.025';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -365,6 +365,10 @@ sub report_match {
 	}eg;
 
 	my $msg = "[${\severity_fancy $rule->{severity}}] " . ($channel ? "[\cB$channel\cB] " : "") . "\cB$sender->[0]\cB - $format";
+	if ($rule->{mention}) {
+		my $ext = join ', ', map eval { (Irssi::Script::track_account::nicks_for($server, $_))[0] } || (), @{$rule->{mention}};
+		$msg .= ' @ ' . $ext if $ext;
+	}
 
 	if (my $chan = $server->channel_find($out)) {
 		$chan->command("say $msg");
@@ -608,7 +612,7 @@ for my $signal ('message public', 'message private') {
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
 				or return $reply->("usage: $cmd ACCOUNT");
 			my @nicks;
-			eval { @nicks = Irssi::Script::track_account::nicks_for $server, $arg };
+			eval { @nicks = Irssi::Script::track_account::nicks_for($server, $arg) };
 			@nicks = sort @nicks;
 			$reply->("$arg is on: @nicks");
 		} elsif ($cmd eq 'rehash') {
