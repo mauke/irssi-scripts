@@ -66,7 +66,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.032';
+our $VERSION = '0.033';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -452,35 +452,37 @@ sub report_match {
 	}eg;
 
 	my $msg = "[${\severity_fancy $rule->{severity}}] " . ($channel ? "[\cB$channel\cB] " : "") . "\cB$sender->[0]\cB - $format";
-	my $ext = '';
 
+	my $ext = '';
 	my @targets;
 	{
-		my @mention;
+		my (%mention_accounts, %target_accounts);
 
 		if ($rule->{mention}) {
-			push @mention, grep $_, map nick_kinda_for($server, $_, $out), @{$rule->{mention}};
+			@mention_accounts{@{$rule->{mention}}} = ();
 		}
-		if ($fchannel && (my $prop = $channel_properties{$fchannel})) {
+
+		my $rule_severity_level = $severity_level{$rule->{severity}};
+
+		for my $prop (grep $_, $fchannel && $channel_properties{$fchannel}, $channel_properties{'*'}) {
 			if (my $mess = $prop->{message}) {
-				my %ma;
-				for my $sev (reverse @severities) {
-					next if $severity_level{$sev} > $severity_level{$rule->{severity}};
-					$ma{$_} = 1 for @{$mess->{$sev}};
+				for my $sev (@severities) {
+					next if $severity_level{$sev} > $rule_severity_level;
+					@target_accounts{@{$mess->{$sev}}} = ();
 				}
-				push @targets, grep $_, map nick_kinda_for($server, $_, $fchannel), sort keys %ma;
 			}
 			if (my $ment = $prop->{mention}) {
-				my %ma;
-				for my $sev (reverse @severities) {
-					next if $severity_level{$sev} > $severity_level{$rule->{severity}};
-					$ma{$_} = 1 for @{$ment->{$sev}};
+				for my $sev (@severities) {
+					next if $severity_level{$sev} > $rule_severity_level;
+					@mention_accounts{@{$ment->{$sev}}} = ();
 				}
-				push @mention, grep $_, map nick_kinda_for($server, $_, $out), sort keys %ma;
 			}
 		}
 
+		my @mention = grep $_, map nick_kinda_for($server, $_, $out), sort keys %mention_accounts;
 		$ext = ' @ ' . join(', ', @mention) if @mention;
+
+		@targets = grep $_, map nick_kinda_for($server, $_, $fchannel), sort keys %target_accounts;
 	}
 
 	if (my $chan = $server->channel_find($out)) {
