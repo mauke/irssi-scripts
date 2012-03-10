@@ -1,3 +1,52 @@
+##############################################################################
+# config layout:
+# ~/
+#   .irssi/
+#     vision.d/
+#       rules.json
+#       net.$network/ (where $network = efnet, freenode, ...)
+#         report_channel
+#         exempt.json
+#         blacklist.json
+#         accounts.json
+#
+##############################################################################
+# schema:
+# * report_channel = channel name
+# * exempt.json = [(string) account]
+# * accounts.json = map<(string) account, (string) flags>
+# * blacklist.json = [string]
+# * rules.json = [rule]
+#   rule = {
+#     id: unique string,
+#     type: (string) msg-re | strbl | nick | user | host | realname | sender |
+#                    nickspam | dnsbl | levenflood | floodqueue | splitflood,
+#     severity: (string) debug | info | low | medium | high,
+#     events: [event],
+#     format: string,
+#     (mention: [(string) account],)?
+#     ...: rule_variant<type>
+#   }
+#   event = (string) join | part | quit | public | action | topic | notice |
+#                    cdcc | cping | cversion
+#   rule_variant =
+#     <msg-re> re: regex string |
+#     <strbl> |
+#     <nick> str: string |
+#     <user> str: string |
+#     <host> str: string |
+#     <realname> str: string |
+#     <sender> re: regex string |
+#     <nickspam> minlen: int, nickcount: int |
+#     <dnsbl> host: string, response: dnsbl_response |
+#     <levenflood> |
+#     <floodqueue> window: int, threshold: int |
+#     <splitflood> window: int, threshold: int
+#                  (, pre-re: regex string)?
+#                  (, post-re: regex string)?
+#   dnsbl_response: map<(string) ip address, (string) description>
+#
+
 use warnings;
 use strict;
 
@@ -15,8 +64,9 @@ use again 'File::Open' => qw(fopen_nothrow fsysopen);
 use again 'IO::Handle' => [];
 use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
+use again 'List::Util' => qw(max);
 
-our $VERSION = '0.025';
+our $VERSION = '0.03';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -99,7 +149,7 @@ sub sliding_history_gc {
 	my $next = sliding_history_purge $now;
 	defined $next or return;
 
-	$sliding_history_gc_tag = timer_add_once 1000 * ($next - $now), \&sliding_history_gc;
+	$sliding_history_gc_tag = timer_add_once 1000 * max(20, $next - $now), \&sliding_history_gc;
 }
 
 sub add_to_history {
@@ -196,22 +246,32 @@ unless (mkdir $DIR) {
 	$!{EEXIST} or die "$DIR: $!";
 }
 
+sub trim {
+	my ($s) = @_;
+	s/^\s+//, s/\s+\z// for $s;
+	$s
+}
+
 sub slurp { local $/; readline $_[0] }
 
-sub read_json_from_default {
-	my ($file, $def) = @_;
-	$file = "$DIR/$file";
+sub read_net_json_from_default {
+	my ($net, $file, $def) = @_;
+	$file = "$DIR/" . ($net eq '*' ? '' : "net.$net/") . $file;
 	my $fh = fopen_nothrow $file, 'rb';
 	if (!$fh) {
 		$!{ENOENT} or die "$file: $!";
 		return $def;
 	}
-	decode_json slurp $fh
+	my $r = decode_json slurp $fh;
+	ref($r) eq ref($def) or die "$file: type doesn't match default (${\ref $def})";
+	$r
 }
 
-sub write_json_to {
-	my ($file, $data) = @_;
-	$file = "$DIR/$file";
+sub write_net_json_to {
+	my ($net, $file, $data) = @_;
+	my $dir = $DIR . ($net eq '*' ? '' : "/net.$net");
+	mkdir($dir) || $!{EEXIST} or die "$dir: $!";
+	$file = "$dir/$file";
 	my $json = JSON->new->canonical->ascii->indent->space_after->encode($data);
 
 	my $proxy = "$file.$$";
@@ -227,32 +287,46 @@ sub write_json_to {
 	rename $proxy, $file or die "$proxy -> $file: $!";
 }
 
-our @global_blacklist;
-our $global_blacklist_re = list2re @global_blacklist;
-
+our %blacklist;
+our %blacklist_re;
 our %exempt_accounts;
 our %privileged_accounts;
 
-sub reread_config {
-	my $repmap = read_json_from_default 'reportmap.json', {};
-	my $raw = read_json_from_default 'rules.json', [];
-	my $ea = read_json_from_default 'exempt.json', {};
-	my $gb = read_json_from_default 'global_blacklist.json', [];
-	my $pa = read_json_from_default 'accounts.json', {};
+sub reread_net_config {
+	my ($net) = @_;
+	my $repchan = do {
+		my $file = "$DIR/net.$net/report_channel";
+		my $fh = fopen_nothrow $file;
+		$fh ? trim slurp $fh :
+		$!{ENOENT} ? undef :
+		die "$file: $!"
+	};
+	my $ea = read_net_json_from_default $net, 'exempt.json', [];
+	my $bl = read_net_json_from_default $net, 'blacklist.json', [];
+	my $pa = read_net_json_from_default $net, 'accounts.json', {};
 
 	my %fea;
-	for my $net (keys %$ea) {
-		my $tree = $fea{$net} ||= {};
+	{
 		my $srv = Irssi::server_find_chatnet($net);
 		my $cfold = $srv ? case_fold_for $srv : sub { lc $_[0] };
-		for my $acc (@{$ea->{$net}}) {
-			$tree->{$cfold->($acc)} = 1;
+		for my $acc (@$ea) {
+			$fea{$cfold->($acc)} = 1;
 		}
 	}
 
+	return {
+		reporting_on => $repchan,
+		privileged_accounts => $pa,
+		blacklist => $bl,
+		exempt_accounts => \%fea,
+	};
+}
+
+sub reread_config {
+	my $rules_raw = read_net_json_from_default '*', 'rules.json', [];
 	my $max_age = 0;
 	my (%rs, %rsbe);
-	for my $proto (@$raw) {
+	for my $proto (@$rules_raw) {
 		my $type = $proto->{type};
 		if ($type eq 'floodqueue' || $type eq 'splitflood') {
 			$max_age = $proto->{window} if $proto->{window} > $max_age;
@@ -265,10 +339,23 @@ sub reread_config {
 		$rsbe{$_}{$id} = undef for @{$proto->{events}};
 	}
 
-	%privileged_accounts = %$pa;
-	%reporting_on = %$repmap;
-	$global_blacklist_re = list2re @global_blacklist = map lc, @$gb;
-	%exempt_accounts = %fea;
+	my (%repmap, %pa, %bl, %bl_re, %ea);
+	for my $srv (Irssi::servers) {
+		my $net = $srv->{chatnet};
+		my $conf = reread_net_config $net;
+		$repmap{$net} = $conf->{reporting_on};
+		$pa{$net} = $conf->{privileged_accounts};
+		$bl{$net} = $conf->{blacklist};
+		$bl_re{$net} = list2re @{$bl{$net}};
+		$ea{$net} = $conf->{exempt_accounts};
+	}
+
+	%reporting_on = %repmap;
+	%privileged_accounts = %pa;
+	%blacklist = %bl;
+	%blacklist_re = %bl_re;
+	%exempt_accounts = %ea;
+
 	%rules = %rs;
 	%rules_by_event = map +($_ => [keys %{$rsbe{$_}}]), keys %rsbe;
 	$sliding_history_max_age = $max_age;
@@ -292,21 +379,23 @@ sub prune_re {
 
 sub rewrite_rules {
 	my $rules_data = [map +{prune_re($rules{$_}), id => $_}, keys %rules];
-	write_json_to 'rules.json', $rules_data;
+	write_net_json_to '*', 'rules.json', $rules_data;
 }
 
-sub rewrite_exempts {
-	write_json_to 'exempt.json', { map +($_ => [sort keys %{$exempt_accounts{$_}}]), keys %exempt_accounts };
+sub rewrite_net_exempts {
+	my ($net) = @_;
+	write_net_json_to $net, 'exempt.json', [sort keys %{$exempt_accounts{$net}}];
 }
 
-sub rewrite_blacklist {
-	write_json_to 'global_blacklist.json', \@global_blacklist;
+sub rewrite_net_blacklist {
+	my ($net) = @_;
+	write_net_json_to $net, 'blacklist.json', \@{$blacklist{$net}};
 }
 
 sub rewrite_config {
 	rewrite_rules;
-	rewrite_exempts;
-	rewrite_blacklist;
+	rewrite_net_exempts $_ for keys %exempt_accounts;
+	rewrite_net_blacklist $_ for keys %blacklist;
 }
 
 our %severity_map = (
@@ -413,7 +502,8 @@ sub generic_handler {
 					$matched = 1;
 				}
 			} elsif ($type eq 'strbl') {
-				if (lc($data) =~ /$global_blacklist_re/) {
+				my $net = $server->{chatnet};
+				if ($blacklist_re{$net} && lc($data) =~ /$blacklist_re{$net}/) {
 					$matched = 1;
 				}
 			} elsif ($type eq 'nick') {
@@ -581,12 +671,13 @@ for my $signal ('message public', 'message private') {
 		my ($server, $msg, $nick, $address, $target) = @_;
 		my $cfold = case_fold_for $server;
 
+		my $net = $server->{chatnet};
 		my $account = eval { Irssi::Script::track_account::account_for($server, $nick) } or return;
-		my $aflags = $privileged_accounts{$server->{chatnet}}{$cfold->($account)} or return;
+		my $aflags = $privileged_accounts{$net}{$cfold->($account)} or return;
 
 		my $reply = sub { $server->command("msg $nick @_") };
 		if ($target) {
-			my $chan = $reporting_on{$server->{chatnet}} or return;
+			my $chan = $reporting_on{$net} or return;
 			$cfold->($target) eq $cfold->($chan) or return;
 			$msg =~ s/^\Q$server->{nick}\E(?=[[:punct:]\s])//i or return;
 			$msg =~ s/^[[:punct:]]+//;
@@ -628,26 +719,26 @@ for my $signal ('message public', 'message private') {
 			$aflags =~ /o/ or return;
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
 				or return $reply->("usage: $cmd ACCOUNT");
-			$exempt_accounts{$server->{chatnet}}{$cfold->($arg)} = 1;
-			rewrite_exempts;
+			$exempt_accounts{$net}{$cfold->($arg)} = 1;
+			rewrite_net_exempts $net;
 			$reply->("$arg exempted");
 		} elsif ($cmd eq 'inempt') {
 			$aflags =~ /o/ or return;
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
 				or return $reply->("usage: $cmd ACCOUNT");
-			delete $exempt_accounts{$server->{chatnet}}{$cfold->($arg)};
-			rewrite_exempts;
+			delete $exempt_accounts{$net}{$cfold->($arg)};
+			rewrite_net_exempts $net;
 			$reply->("$arg inempted");
 		} elsif ($cmd eq 'blacklist') {
 			$aflags =~ /o/ or return;
 			$msg =~ /\S/
 				or return $reply->("usage: $cmd STRING");
 			my $str = lc $msg;
-			$str =~ /$global_blacklist_re/
+			$blacklist_re{$net} && $str =~ /$blacklist_re{$net}/
 				and return $reply->("$msg is already blacklisted");
-			push @global_blacklist, $str;
-			$global_blacklist_re = list2re @global_blacklist;
-			rewrite_blacklist;
+			push @{$blacklist{$net}}, $str;
+			$blacklist_re{$net} = list2re @{$blacklist{$net}};
+			rewrite_net_blacklist $net;
 			$reply->("$msg blacklisted");
 		} elsif (!$target) {
 			$reply->("unknown command: $cmd");
@@ -677,10 +768,23 @@ defgenhandler 'ctcp msg version'   => 'cversion', [0 .. 4];
 Irssi::signal_add 'event connected' => sub {
 	my ($server) = @_;
 	my $net = $server->{chatnet};
-	my $chan = $reporting_on{$net};
+
+	my $conf = reread_net_config $net;
+	$privileged_accounts{$net} = $conf->{privileged_accounts};
+	$blacklist{$net} = $conf->{blacklist};
+	$blacklist_re{$net} = list2re @{$blacklist{$net}};
+	$exempt_accounts{$net} = $conf->{exempt_accounts};
+	my $chan = $reporting_on{$net} = $conf->{reporting_on};
+
 	if ($chan && !$server->channel_find($chan)) {
 		$server->command("join $chan");
 	}
+};
+
+Irssi::signal_add 'server disconnected' => sub {
+	my ($server) = @_;
+	my $net = $server->{chatnet};
+	delete $_->{$net} for \(%reporting_on, %privileged_accounts, %blacklist, %blacklist_re, %exempt_accounts);
 };
 
 reread_config;
