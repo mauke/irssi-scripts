@@ -63,10 +63,10 @@ use again 'JSON'; BEGIN { JSON->VERSION(2) }
 use again 'File::Open' => qw(fopen_nothrow fsysopen);
 use again 'IO::Handle' => [];
 use again 'Text::LevenshteinXS' => [];
-use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
+use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.031';
+our $VERSION = '0.032';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -519,12 +519,17 @@ sub generic_handler {
 		my @ids = @{$rules_by_event{$event} || []};
 
 		for my $rule (@rules{@ids}) {
+			my %bonus;
 			my $matched;
 			my $type = $rule->{type};
 
 			if ($type eq 'msg-re') {
 				if ($data =~ /$rule->{re}/) {
 					$matched = 1;
+					my $i = 1;
+					for my $m (submatches) {
+						$bonus{$i++} = $m;
+					}
 				}
 			} elsif ($type eq 'strbl') {
 				my $net = $server->{chatnet};
@@ -669,17 +674,18 @@ sub generic_handler {
 			}
 
 			if ($matched) {
-				push @matched_rules, $rule;
+				push @matched_rules, [$rule, \%bonus];
 			}
 		}
 	}
 
 	if (@matched_rules) {
-		@matched_rules = sort { $severity_level{$b->{severity}} <=> $severity_level{$a->{severity}} } @matched_rules;
-		my $severity = $matched_rules[0]{severity};
-		for my $rule (@matched_rules) {
+		@matched_rules = sort { $severity_level{$b->[0]{severity}} <=> $severity_level{$a->[0]{severity}} } @matched_rules;
+		my $severity = $matched_rules[0][0]{severity};
+		for my $pair (@matched_rules) {
+			my ($rule, $bonus) = @$pair;
 			last if $rule->{severity} ne $severity;
-			report_match $server, $rule, $sender, $target;
+			report_match $server, $rule, $sender, $target, $bonus;
 		}
 	}
 
