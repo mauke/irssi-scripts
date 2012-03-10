@@ -66,7 +66,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.03';
+our $VERSION = '0.031';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -75,44 +75,33 @@ our %IRSSI = (
 
 our $ADNS = IrssiX::ADNS->new;
 
-#== local/sync ==
-# nickspam
-#   if length($msg) >= N and count_nicks($msg) >= M: complain
+sub realname_for {
+	my ($server, $nick) = @_;
+	eval { Irssi::Script::track_account::realname_for($server, $nick) }
+}
 
-# re
-#   $msg matches fixed regex
+sub account_for {
+	my ($server, $nick) = @_;
+	eval { Irssi::Script::track_account::account_for($server, $nick) }
+}
 
-# strbl
-#   $msg contains any of set of fixed strings (case insensitive)
+sub nicks_for {
+	my ($server, $account) = @_;
+	my @nicks;
+	eval { @nicks = Irssi::Script::track_account::nicks_for($server, $account) };
+	@nicks
+}
 
-# nick, ident, host, gecos
-#   $nick/$ident/$host/$realname equals fixed string (case insensitive)
-
-# nuhg
-#   "$nick!$user\@$host!$realname" matches fixed regex
-
-#== tracking/sync ==
-# floodqueue
-#   N matching(type,target,host) events in M seconds
-
-# splitflood
-#   if N copies of the same message arrive in a channel in M seconds: blacklist that message for 10 minutes and complain
-#   if a blacklisted message arrives in a channel: complain
-#   NB. separate blacklist per rule
-
-# advsplitflood
-#   remove leading/trailing digits, then goto splitflood
-
-# levenflood
-#   take last max(6 .. 12) messages to channel where length >= 30
-#   remove those where length != length($msg)
-#   remove those where dist_levenshtein($msg) > 4
-#   if 5 or more are left: complain
-
-#== async ==
-# dnsbl
-#   resolve host
-#   resolve/check against dnsbl
+sub nick_kinda_for {
+	my ($server, $account, $channel) = @_;
+	my @nicks = nicks_for $server, $account or return undef;
+	$channel or return $nicks[0];
+	my $chan = $server->channel_find($channel) or return $nicks[0];
+	for my $nick (@nicks) {
+		return $nick if $chan->nick_find($nick);
+	}
+	$nicks[0]
+}
 
 our %sliding_history;
 our $sliding_history_gc_tag;
@@ -291,6 +280,7 @@ our %blacklist;
 our %blacklist_re;
 our %exempt_accounts;
 our %privileged_accounts;
+our %channel_properties;
 
 sub reread_net_config {
 	my ($net) = @_;
@@ -304,14 +294,17 @@ sub reread_net_config {
 	my $ea = read_net_json_from_default $net, 'exempt.json', [];
 	my $bl = read_net_json_from_default $net, 'blacklist.json', [];
 	my $pa = read_net_json_from_default $net, 'accounts.json', {};
+	my $cp = read_net_json_from_default $net, 'channels.json', {};
 
+	my $server = Irssi::server_find_chatnet($net);
+	my $cfold = $server ? case_fold_for $server : sub { lc $_[0] };
 	my %fea;
-	{
-		my $srv = Irssi::server_find_chatnet($net);
-		my $cfold = $srv ? case_fold_for $srv : sub { lc $_[0] };
-		for my $acc (@$ea) {
-			$fea{$cfold->($acc)} = 1;
-		}
+	for my $acc (@$ea) {
+		$fea{$cfold->($acc)} = 1;
+	}
+	my %fcp;
+	for my $c (keys %$cp) {
+		$fcp{$cfold->($c)} = $cp->{$c};
 	}
 
 	return {
@@ -319,6 +312,7 @@ sub reread_net_config {
 		privileged_accounts => $pa,
 		blacklist => $bl,
 		exempt_accounts => \%fea,
+		channel_properties => \%fcp,
 	};
 }
 
@@ -339,7 +333,7 @@ sub reread_config {
 		$rsbe{$_}{$id} = undef for @{$proto->{events}};
 	}
 
-	my (%repmap, %pa, %bl, %bl_re, %ea);
+	my (%repmap, %pa, %bl, %bl_re, %ea, %cp);
 	for my $srv (Irssi::servers) {
 		my $net = $srv->{chatnet};
 		my $conf = reread_net_config $net;
@@ -348,6 +342,7 @@ sub reread_config {
 		$bl{$net} = $conf->{blacklist};
 		$bl_re{$net} = list2re @{$bl{$net}};
 		$ea{$net} = $conf->{exempt_accounts};
+		$cp{$net} = $conf->{channel_properties};
 	}
 
 	%reporting_on = %repmap;
@@ -355,6 +350,7 @@ sub reread_config {
 	%blacklist = %bl;
 	%blacklist_re = %bl_re;
 	%exempt_accounts = %ea;
+	%channel_properties = %cp;
 
 	%rules = %rs;
 	%rules_by_event = map +($_ => [keys %{$rsbe{$_}}]), keys %rsbe;
@@ -398,13 +394,14 @@ sub rewrite_config {
 	rewrite_net_blacklist $_ for keys %blacklist;
 }
 
-our %severity_map = (
+our %severity_level = (
 	debug => 0,
 	info => 1,
 	low => 2,
 	medium => 3,
 	high => 4,
 );
+our @severities = sort { $severity_level{$a} <=> $severity_level{$b} } keys %severity_level;
 
 sub severity_fancy {
 	my ($x) = @_;
@@ -425,14 +422,15 @@ sub report_match {
 	my ($server, $rule, $sender, $channel, $bonus) = @_;
 	my $out = $reporting_on{$server->{chatnet}} or return;
 
+	my $fchannel;
 	if ($channel) {
 		my $now = time;
 		my $cfold = case_fold_for $server;
-		my $fchannel = $cfold->($channel);
+		$fchannel = $cfold->($channel);
 		my $e = $last_report{$server->{tag}}{$fchannel} ||= {};
 		if (
 			$e->{severity} &&
-			$severity_map{$e->{severity}} >= $severity_map{$rule->{severity}} &&
+			$severity_level{$e->{severity}} >= $severity_level{$rule->{severity}} &&
 			$e->{timestamp} > $now - 45
 		) {
 			return;
@@ -454,16 +452,43 @@ sub report_match {
 	}eg;
 
 	my $msg = "[${\severity_fancy $rule->{severity}}] " . ($channel ? "[\cB$channel\cB] " : "") . "\cB$sender->[0]\cB - $format";
-	if ($rule->{mention}) {
-		my $ext = join ', ', map eval { (Irssi::Script::track_account::nicks_for($server, $_))[0] } || (), @{$rule->{mention}};
-		$msg .= ' @ ' . $ext if $ext;
+	my $ext = '';
+
+	my @targets;
+	{
+		my @mention;
+
+		if ($rule->{mention}) {
+			push @mention, grep $_, map nick_kinda_for($server, $_, $out), @{$rule->{mention}};
+		}
+		if ($fchannel && (my $prop = $channel_properties{$fchannel})) {
+			if (my $mess = $prop->{message}) {
+				my %ma;
+				for my $sev (reverse @severities) {
+					next if $severity_level{$sev} > $severity_level{$rule->{severity}};
+					$ma{$_} = 1 for @{$mess->{$sev}};
+				}
+				push @targets, grep $_, map nick_kinda_for($server, $_, $fchannel), sort keys %ma;
+			}
+			if (my $ment = $prop->{mention}) {
+				my %ma;
+				for my $sev (reverse @severities) {
+					next if $severity_level{$sev} > $severity_level{$rule->{severity}};
+					$ma{$_} = 1 for @{$ment->{$sev}};
+				}
+				push @mention, grep $_, map nick_kinda_for($server, $_, $out), sort keys %ma;
+			}
+		}
+
+		$ext = ' @ ' . join(', ', @mention) if @mention;
 	}
 
 	if (my $chan = $server->channel_find($out)) {
-		$chan->command("say $msg");
+		$chan->command("say $msg$ext");
 	} else {
-		$server->print('', esc("$out ?? $msg"), Irssi::MSGLEVEL_CLIENTERROR); 
+		$server->print('', esc("$out ?? $msg$ext"), Irssi::MSGLEVEL_CLIENTERROR); 
 	}
+	$server->command("^msg ${\join ',', @targets} $msg") if @targets;
 }
 
 sub generic_handler {
@@ -485,10 +510,10 @@ sub generic_handler {
 	my $levencheck;
 	my @matched_rules;
 
-	my $account = eval { Irssi::Script::track_account::account_for($server, $nick) } || '';
+	my $account = account_for($server, $nick) || '';
 	unless ($account && $exempt_accounts{$server->{chatnet}}{$cfold->($account)}) {
 		if ($event eq 'join') {
-			$data = "$nick!$user\@$host?$account#" . (eval { Irssi::Script::track_account::realname_for($server, $nick) } || '');
+			$data = "$nick!$user\@$host?$account#" . (realname_for($server, $nick) || '');
 		}
 
 		my @ids = @{$rules_by_event{$event} || []};
@@ -519,13 +544,13 @@ sub generic_handler {
 					$matched = 1;
 				}
 			} elsif ($type eq 'realname') {
-				my $realname = eval { Irssi::Script::track_account::realname_for($server, $nick) };
+				my $realname = realname_for($server, $nick);
 				defined $realname or next;
 				if (lc($realname) eq lc($rule->{str})) {
 					$matched = 1;
 				}
 			} elsif ($type eq 'sender') {
-				my $realname = eval { Irssi::Script::track_account::realname_for($server, $nick) };
+				my $realname = realname_for($server, $nick);
 				defined $realname or next;
 				if ("$nick!$user\@$host#$realname" =~ /$rule->{re}/) {
 					$matched = 1;
@@ -650,7 +675,7 @@ sub generic_handler {
 	}
 
 	if (@matched_rules) {
-		@matched_rules = sort { $severity_map{$b->{severity}} <=> $severity_map{$a->{severity}} } @matched_rules;
+		@matched_rules = sort { $severity_level{$b->{severity}} <=> $severity_level{$a->{severity}} } @matched_rules;
 		my $severity = $matched_rules[0]{severity};
 		for my $rule (@matched_rules) {
 			last if $rule->{severity} ne $severity;
@@ -672,7 +697,7 @@ for my $signal ('message public', 'message private') {
 		my $cfold = case_fold_for $server;
 
 		my $net = $server->{chatnet};
-		my $account = eval { Irssi::Script::track_account::account_for($server, $nick) } or return;
+		my $account = account_for($server, $nick)or return;
 		my $aflags = $privileged_accounts{$net}{$cfold->($account)} or return;
 
 		my $reply = sub { $server->command("msg $nick @_") };
@@ -702,8 +727,7 @@ for my $signal ('message public', 'message private') {
 			$aflags =~ /t/ or return;
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
 				or return $reply->("usage: $cmd ACCOUNT");
-			my @nicks;
-			eval { @nicks = Irssi::Script::track_account::nicks_for($server, $arg) };
+			my @nicks = nicks_for $server, $arg;
 			@nicks = sort @nicks;
 			$reply->("$arg is on: @nicks");
 		} elsif ($cmd eq 'rehash') {
@@ -774,6 +798,7 @@ Irssi::signal_add 'event connected' => sub {
 	$blacklist{$net} = $conf->{blacklist};
 	$blacklist_re{$net} = list2re @{$blacklist{$net}};
 	$exempt_accounts{$net} = $conf->{exempt_accounts};
+	$channel_properties{$net} = $conf->{channel_properties};
 	my $chan = $reporting_on{$net} = $conf->{reporting_on};
 
 	if ($chan && !$server->channel_find($chan)) {
@@ -784,7 +809,7 @@ Irssi::signal_add 'event connected' => sub {
 Irssi::signal_add 'server disconnected' => sub {
 	my ($server) = @_;
 	my $net = $server->{chatnet};
-	delete $_->{$net} for \(%reporting_on, %privileged_accounts, %blacklist, %blacklist_re, %exempt_accounts);
+	delete $_->{$net} for \(%reporting_on, %privileged_accounts, %blacklist, %blacklist_re, %exempt_accounts, %channel_properties);
 };
 
 reread_config;
