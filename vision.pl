@@ -66,7 +66,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.033';
+our $VERSION = '0.034';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -705,7 +705,7 @@ for my $signal ('message public', 'message private') {
 		my $cfold = case_fold_for $server;
 
 		my $net = $server->{chatnet};
-		my $account = account_for($server, $nick)or return;
+		my $account = account_for($server, $nick) or return;
 		my $aflags = $privileged_accounts{$net}{$cfold->($account)} or return;
 
 		my $reply = sub { $server->command("msg $nick @_") };
@@ -731,6 +731,7 @@ for my $signal ('message public', 'message private') {
 			}
 			@c = sort @c;
 			$reply->("$arg is on: @c");
+
 		} elsif ($cmd eq 'nicks') {
 			$aflags =~ /t/ or return;
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
@@ -738,15 +739,32 @@ for my $signal ('message public', 'message private') {
 			my @nicks = nicks_for $server, $arg;
 			@nicks = sort @nicks;
 			$reply->("$arg is on: @nicks");
+
 		} elsif ($cmd eq 'rehash') {
 			$aflags =~ /a/ or return;
 			eval { reread_config; 1 } or return $reply->("something done fucked up");
 			$reply->("ok");
+
 		} elsif ($cmd eq 'reload') {
 			$aflags =~ /a/ or return;
 			eval { reread_config; 1 } or return $reply->("something done fucked up");
 			Irssi::signal_emit 'reload script next', __PACKAGE__;
 			$reply->("...");
+
+		} elsif ($cmd eq 'join') {
+			$aflags =~ /a/ or return;
+			my ($arg) = $msg =~ /^(#\S+)\s*\z/
+				or return $reply->("usage: $cmd CHANNEL");
+			$server->command("join $arg");
+			$reply->("yes");
+
+		} elsif ($cmd eq 'part') {
+			$aflags =~ /a/ or return;
+			my ($arg) = $msg =~ /^(#\S+)\s*\z/
+				or return $reply->("usage: $cmd CHANNEL");
+			$server->command("part $arg");
+			$reply->("yes");
+
 		} elsif ($cmd eq 'exempt') {
 			$aflags =~ /o/ or return;
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
@@ -754,6 +772,7 @@ for my $signal ('message public', 'message private') {
 			$exempt_accounts{$net}{$cfold->($arg)} = 1;
 			rewrite_net_exempts $net;
 			$reply->("$arg exempted");
+
 		} elsif ($cmd eq 'inempt') {
 			$aflags =~ /o/ or return;
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
@@ -761,6 +780,7 @@ for my $signal ('message public', 'message private') {
 			delete $exempt_accounts{$net}{$cfold->($arg)};
 			rewrite_net_exempts $net;
 			$reply->("$arg inempted");
+
 		} elsif ($cmd eq 'blacklist') {
 			$aflags =~ /o/ or return;
 			$msg =~ /\S/
@@ -772,7 +792,8 @@ for my $signal ('message public', 'message private') {
 			$blacklist_re{$net} = list2re @{$blacklist{$net}};
 			rewrite_net_blacklist $net;
 			$reply->("$msg blacklisted");
-		} elsif (!$target) {
+
+		} else {
 			$reply->("unknown command: $cmd");
 		}
 	};
