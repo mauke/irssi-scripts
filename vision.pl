@@ -66,7 +66,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.034';
+our $VERSION = '0.035';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -451,7 +451,7 @@ sub report_match {
 		''
 	}eg;
 
-	my $msg = "[${\severity_fancy $rule->{severity}}] " . ($channel ? "[\cB$channel\cB] " : "") . "\cB$sender->[0]\cB - $format";
+	my $msg = "${\severity_fancy $rule->{severity}} " . ($channel ? "[\cB$channel\cB] " : "") . "\cB$sender->[0]\cB - $format";
 
 	my $ext = '';
 	my @targets;
