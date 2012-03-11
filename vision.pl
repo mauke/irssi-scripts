@@ -334,8 +334,8 @@ sub reread_config {
 	}
 
 	my (%repmap, %pa, %bl, %bl_re, %ea, %cp);
-	for my $srv (Irssi::servers) {
-		my $net = $srv->{chatnet};
+	for my $server (Irssi::servers) {
+		my $net = $server->{chatnet};
 		my $conf = reread_net_config $net;
 		$repmap{$net} = $conf->{reporting_on};
 		$pa{$net} = $conf->{privileged_accounts};
@@ -842,3 +842,10 @@ Irssi::signal_add 'server disconnected' => sub {
 };
 
 reread_config;
+
+for my $server (Irssi::servers) {
+	my $net = $server->{chatnet};
+	my $out = $reporting_on{$server->{chatnet}} or next;
+	my $chan = $server->channel_find($out) or next;
+	$chan->command("say goliath online.");
+}
