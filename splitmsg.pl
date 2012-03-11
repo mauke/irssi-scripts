@@ -1,11 +1,13 @@
 use warnings;
 use strict;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 our %IRSSI = (
 	authors => 'mauke',
 	name => 'splitmsg',
 );
+
+use bytes ();
 
 Irssi::settings_add_int $IRSSI{name}, 'splitmsg_msgmax', 400;
 my $msgmax = Irssi::settings_get_int 'splitmsg_msgmax';
