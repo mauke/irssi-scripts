@@ -66,7 +66,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.035';
+our $VERSION = '0.036';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -839,6 +839,16 @@ Irssi::signal_add 'server disconnected' => sub {
 	my ($server) = @_;
 	my $net = $server->{chatnet};
 	delete $_->{$net} for \(%reporting_on, %privileged_accounts, %blacklist, %blacklist_re, %exempt_accounts, %channel_properties);
+};
+
+Irssi::command_bind $IRSSI{name} => sub {
+	my ($data, $server, $witem) = @_;
+	Irssi::command_runsub $IRSSI{name}, $data, $server, $witem;
+};
+
+Irssi::command_bind "$IRSSI{name} rehash" => sub {
+	my ($data, $server, $witem) = @_;
+	reread_config;
 };
 
 reread_config;
