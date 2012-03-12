@@ -400,6 +400,7 @@ our %severity_level = (
 	low => 2,
 	medium => 3,
 	high => 4,
+	emergency => 5,
 );
 our @severities = sort { $severity_level{$a} <=> $severity_level{$b} } keys %severity_level;
 
@@ -411,6 +412,7 @@ sub severity_fancy {
 		$x eq 'low'    ? '09' :
 		$x eq 'medium' ? '08' :
 		$x eq 'high'   ? '04' :
+		$x eq 'emergency' ? '15,05' :
 		''
 	;
 	"\cC$c\x{25CF}\cC$x"
