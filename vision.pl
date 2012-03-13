@@ -74,7 +74,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.036';
+our $VERSION = '0.037';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -606,7 +606,7 @@ sub generic_handler {
 					$host,
 					sub {},
 					$on_addr,
-				);
+				) unless $host =~ m{/};
 			} elsif ($type eq 'levenflood') {
 				$fchannel or next;
 				$levencheck = 1;
