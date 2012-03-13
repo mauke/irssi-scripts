@@ -74,7 +74,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.037';
+our $VERSION = '0.038';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -338,7 +338,7 @@ sub reread_config {
 		}
 		my $id = $proto->{id};
 		$rs{$id} = $proto;
-		$rsbe{$_}{$id} = undef for @{$proto->{events}};
+		$rsbe{$_}{$id} = undef for @{$proto->{events} || []};
 	}
 
 	my (%repmap, %pa, %bl, %bl_re, %ea, %cp);
@@ -430,7 +430,8 @@ our %last_report;
 
 sub report_match {
 	my ($server, $rule, $sender, $channel, $bonus) = @_;
-	my $out = $reporting_on{$server->{chatnet}} or return;
+	my $net = $server->{chatnet};
+	my $out = $reporting_on{$net} or return;
 
 	my $fchannel;
 	if ($channel) {
@@ -468,23 +469,21 @@ sub report_match {
 	{
 		my (%mention_accounts, %target_accounts);
 
-		if ($rule->{mention}) {
-			@mention_accounts{@{$rule->{mention}}} = ();
-		}
+		@mention_accounts{@{$rule->{mention} || []}} = ();
 
 		my $rule_severity_level = $severity_level{$rule->{severity}};
 
-		for my $prop (grep $_, $fchannel && $channel_properties{$fchannel}, $channel_properties{'*'}) {
+		for my $prop (grep $_, $fchannel && $channel_properties{$net}{$fchannel}, $channel_properties{$net}{'*'}) {
 			if (my $mess = $prop->{message}) {
 				for my $sev (@severities) {
 					next if $severity_level{$sev} > $rule_severity_level;
-					@target_accounts{@{$mess->{$sev}}} = ();
+					@target_accounts{@{$mess->{$sev} || []}} = ();
 				}
 			}
 			if (my $ment = $prop->{mention}) {
 				for my $sev (@severities) {
 					next if $severity_level{$sev} > $rule_severity_level;
-					@mention_accounts{@{$ment->{$sev}}} = ();
+					@mention_accounts{@{$ment->{$sev} || []}} = ();
 				}
 			}
 		}
@@ -664,7 +663,7 @@ sub generic_handler {
 				my $window = $rule->{window};
 				my $cutoff = $now - $window;
 				my $threshold = $rule->{threshold};
-				my $event_re = list2re @{$rule->{events}};
+				my $event_re = list2re @{$rule->{events} || []};
 
 				my $queue = $sliding_history{$tag}{$fchannel};
 				my $matches = 0;
