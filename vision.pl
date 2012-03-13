@@ -9,22 +9,30 @@
 #         exempt.json
 #         blacklist.json
 #         accounts.json
+#         channels.json
 #
 ##############################################################################
 # schema:
 # * report_channel = channel name
-# * exempt.json = [(string) account]
-# * accounts.json = map<(string) account, (string) flags>
+# * exempt.json = [account]
+#   account = string
+# * accounts.json = map<account, (string) flags>
 # * blacklist.json = [string]
+# * channels.json = map<(string) channel, chanprop>
+#   chanprop = {
+#     (mention: map<severity, account>,)?
+#     (message: map<severity, account>,)?
+#   }
+#   severity = (string) debug | info | low | medium | high
 # * rules.json = [rule]
 #   rule = {
 #     id: unique string,
 #     type: (string) msg-re | strbl | nick | user | host | realname | sender |
 #                    nickspam | dnsbl | levenflood | floodqueue | splitflood,
-#     severity: (string) debug | info | low | medium | high,
+#     severity: severity
 #     events: [event],
 #     format: string,
-#     (mention: [(string) account],)?
+#     (mention: [account],)?
 #     ...: rule_variant<type>
 #   }
 #   event = (string) join | part | quit | public | action | topic | notice |
