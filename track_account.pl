@@ -6,14 +6,16 @@ use Irssi ();
 use Dir::Self;
 use lib __DIR__ . "/lib";
 
-use again 'IrssiX::Util' => qw(esc case_fold_for);
+use again 'IrssiX::Util' => qw(esc case_fold_for require_script);
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 our %IRSSI = (
 	authors => 'mauke',
 	name => 'track_account',
 );
+
+require_script 'cap_all';
 
 our %accounts;
 our %nicks_by_account;

@@ -63,7 +63,7 @@ use Irssi ();
 use Dir::Self;
 use lib __DIR__ . '/lib';
 
-use again 'IrssiX::Util' => qw(case_fold_for timer_add_once esc later puts);
+use again 'IrssiX::Util' => qw(case_fold_for timer_add_once require_script esc later puts);
 use again 'IrssiX::ADNS';
 use again 'Time::HiRes' => qw(time);
 use again 'Errno';
@@ -74,12 +74,14 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.038';
+our $VERSION = '0.04';
 
 our %IRSSI = (
 	authors => 'mauke',
 	name => 'vision',
 );
+
+BEGIN { require_script 'track_account'; }
 
 our $ADNS = IrssiX::ADNS->new;
 
