@@ -74,7 +74,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.04';
+our $VERSION = '0.041';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -261,7 +261,7 @@ sub read_net_json_from_default {
 		$!{ENOENT} or die "$file: $!";
 		return $def;
 	}
-	my $r = decode_json slurp $fh;
+	my $r = JSON->new->relaxed->decode(slurp $fh);
 	ref($r) eq ref($def) or die "$file: type doesn't match default (${\ref $def})";
 	$r
 }
