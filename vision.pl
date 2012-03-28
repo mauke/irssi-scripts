@@ -71,7 +71,7 @@ use again 'JSON'; BEGIN { JSON->VERSION(2) }
 use again 'File::Open' => qw(fopen_nothrow fsysopen);
 use again 'IO::Handle' => [];
 use again 'Text::LevenshteinXS' => [];
-use again 'Data::Munge' => qw(list2re submatches); BEGIN { Data::Munge->VERSION('0.04') }
+use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
 our $VERSION = '0.04';
@@ -537,10 +537,10 @@ sub generic_handler {
 			my $type = $rule->{type};
 
 			if ($type eq 'msg-re') {
-				if ($data =~ /$rule->{re}/) {
+				if (my @m = $data =~ /$rule->{re}/) {
 					$matched = 1;
 					my $i = 1;
-					for my $m (submatches) {
+					for my $m (@m) {
 						$bonus{$i++} = $m;
 					}
 				}
