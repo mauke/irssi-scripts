@@ -74,7 +74,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.041';
+our $VERSION = '0.042';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -709,8 +709,27 @@ sub generic_handler {
 	}
 }
 
+sub defgenhandler {
+	my ($signal, $event, $indices) = @_;
+	Irssi::signal_add $signal => sub {
+		Irssi::signal_continue @_;
+		generic_handler $event, @_[@$indices];
+	};
+}
+
+defgenhandler 'message public'     => 'public',   [0 .. 4];
+defgenhandler 'message part'       => 'part',     [0, 4, 2, 3, 1];
+defgenhandler 'message join'       => 'join',     [0, 2, 2, 3, 1];
+defgenhandler 'message quit'       => 'quit',     [0, 3, 1, 2];
+defgenhandler 'message topic'      => 'topic',    [0, 2, 3, 4, 1];
+defgenhandler 'message irc notice' => 'notice',   [0 .. 4];
+defgenhandler 'ctcp action'        => 'action',   [0 .. 4];
+defgenhandler 'ctcp msg dcc'       => 'cdcc',     [0 .. 4];
+defgenhandler 'ctcp msg ping'      => 'cping',    [0 .. 4];
+defgenhandler 'ctcp msg version'   => 'cversion', [0 .. 4];
+
 for my $signal ('message public', 'message private') {
-	Irssi::signal_add_last $signal => sub {
+	Irssi::signal_add $signal => sub {
 		Irssi::signal_continue @_;
 		my ($server, $msg, $nick, $address, $target) = @_;
 		my $cfold = case_fold_for $server;
@@ -809,25 +828,6 @@ for my $signal ('message public', 'message private') {
 		}
 	};
 }
-
-sub defgenhandler {
-	my ($signal, $event, $indices) = @_;
-	Irssi::signal_add $signal => sub {
-		Irssi::signal_continue @_;
-		generic_handler $event, @_[@$indices];
-	};
-}
-
-defgenhandler 'message public'     => 'public',   [0 .. 4];
-defgenhandler 'message part'       => 'part',     [0, 4, 2, 3, 1];
-defgenhandler 'message join'       => 'join',     [0, 2, 2, 3, 1];
-defgenhandler 'message quit'       => 'quit',     [0, 3, 1, 2];
-defgenhandler 'message topic'      => 'topic',    [0, 2, 3, 4, 1];
-defgenhandler 'message irc notice' => 'notice',   [0 .. 4];
-defgenhandler 'ctcp action'        => 'action',   [0 .. 4];
-defgenhandler 'ctcp msg dcc'       => 'cdcc',     [0 .. 4];
-defgenhandler 'ctcp msg ping'      => 'cping',    [0 .. 4];
-defgenhandler 'ctcp msg version'   => 'cversion', [0 .. 4];
 
 Irssi::signal_add 'event connected' => sub {
 	my ($server) = @_;
