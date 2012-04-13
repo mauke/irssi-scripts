@@ -499,7 +499,7 @@ sub report_match {
 	if (my $chan = $server->channel_find($out)) {
 		$chan->command("say $msg$ext");
 	} else {
-		$server->print('', esc("$out ?? $msg$ext"), Irssi::MSGLEVEL_CLIENTERROR); 
+		$server->print('', esc("$out ?? $msg$ext"), Irssi::MSGLEVEL_CLIENTERROR);
 	}
 	$server->command("^msg ${\join ',', @targets} $msg") if @targets;
 }
@@ -516,7 +516,7 @@ sub generic_handler {
 	my $fchannel;
 	if ($target) {
 		$server->ischannel($target) or return;
-		$fchannel = $cfold->($target)
+		$fchannel = $cfold->($target);
 	}
 
 	my $now = time;
