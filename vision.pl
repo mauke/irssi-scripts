@@ -7,6 +7,7 @@
 #       net.$network/ (where $network = efnet, freenode, ...)
 #         report_channel
 #         exempt.json
+#         exempt_masks.json
 #         blacklist.json
 #         accounts.json
 #         channels.json
@@ -16,6 +17,8 @@
 # * report_channel = channel name
 # * exempt.json = [account]
 #   account = string
+# * exempt_masks.json = [mask]
+#   mask = wildcard string
 # * accounts.json = map<account, (string) flags>
 # * blacklist.json = [string]
 # * channels.json = map<(string) channel, chanprop>
@@ -74,7 +77,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.042';
+our $VERSION = '0.05';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -289,6 +292,8 @@ sub write_net_json_to {
 our %blacklist;
 our %blacklist_re;
 our %exempt_accounts;
+our %exempt_masks;
+our %exempt_masks_re;
 our %privileged_accounts;
 our %channel_properties;
 
@@ -302,6 +307,7 @@ sub reread_net_config {
 		die "$file: $!"
 	};
 	my $ea = read_net_json_from_default $net, 'exempt.json', [];
+	my $em = read_net_json_from_default $net, 'exempt_masks.json', [];
 	my $bl = read_net_json_from_default $net, 'blacklist.json', [];
 	my $pa = read_net_json_from_default $net, 'accounts.json', {};
 	my $cp = read_net_json_from_default $net, 'channels.json', {};
@@ -322,8 +328,27 @@ sub reread_net_config {
 		privileged_accounts => $pa,
 		blacklist => $bl,
 		exempt_accounts => \%fea,
+		exempt_masks => $em,
 		channel_properties => \%fcp,
 	};
+}
+
+sub wildcard2re {
+	my ($pat) = @_;
+	$pat =~ s{(\W)}{
+		$1 eq '*' ? '.*' :
+		$1 eq '?' ? '.' :
+		"\\$1"
+	}eg;
+	$pat
+}
+
+sub masks2re {
+	my $re = '(?!)';
+	for my $mask (@_) {
+		$re .= '|' . wildcard2re $mask;
+	}
+	qr/^(?:$re)\z/
 }
 
 sub reread_config {
@@ -343,7 +368,7 @@ sub reread_config {
 		$rsbe{$_}{$id} = undef for @{$proto->{events} || []};
 	}
 
-	my (%repmap, %pa, %bl, %bl_re, %ea, %cp);
+	my (%repmap, %pa, %bl, %bl_re, %ea, %em, %em_re, %cp);
 	for my $server (Irssi::servers) {
 		my $net = $server->{chatnet};
 		my $conf = reread_net_config $net;
@@ -352,6 +377,8 @@ sub reread_config {
 		$bl{$net} = $conf->{blacklist};
 		$bl_re{$net} = list2re @{$bl{$net}};
 		$ea{$net} = $conf->{exempt_accounts};
+		$em{$net} = $conf->{exempt_masks};
+		$em_re{$net} = masks2re @{$em{$net}};
 		$cp{$net} = $conf->{channel_properties};
 	}
 
@@ -360,6 +387,8 @@ sub reread_config {
 	%blacklist = %bl;
 	%blacklist_re = %bl_re;
 	%exempt_accounts = %ea;
+	%exempt_masks = %em;
+	%exempt_masks_re = %em_re;
 	%channel_properties = %cp;
 
 	%rules = %rs;
@@ -393,6 +422,11 @@ sub rewrite_net_exempts {
 	write_net_json_to $net, 'exempt.json', [sort keys %{$exempt_accounts{$net}}];
 }
 
+sub rewrite_net_exempt_masks {
+	my ($net) = @_;
+	write_net_json_to $net, 'exempt_masks.json', \@{$exempt_masks{$net}};
+}
+
 sub rewrite_net_blacklist {
 	my ($net) = @_;
 	write_net_json_to $net, 'blacklist.json', \@{$blacklist{$net}};
@@ -401,6 +435,7 @@ sub rewrite_net_blacklist {
 sub rewrite_config {
 	rewrite_rules;
 	rewrite_net_exempts $_ for keys %exempt_accounts;
+	rewrite_net_exempt_masks $_ for keys %exempt_masks;
 	rewrite_net_blacklist $_ for keys %blacklist;
 }
 
@@ -524,7 +559,10 @@ sub generic_handler {
 	my @matched_rules;
 
 	my $account = account_for($server, $nick) || '';
-	unless ($account && $exempt_accounts{$server->{chatnet}}{$cfold->($account)}) {
+	unless (
+		($account && $exempt_accounts{$server->{chatnet}}{$cfold->($account)}) ||
+		($cfold->($nick) . '!' . $user . '@' . lc $host) =~ /$exempt_masks_re{$server->{chatnet}}/
+	) {
 		if ($event eq 'join') {
 			$data = "$nick!$user\@$host?$account#" . (realname_for($server, $nick) || '');
 		}
@@ -838,6 +876,8 @@ Irssi::signal_add 'event connected' => sub {
 	$blacklist{$net} = $conf->{blacklist};
 	$blacklist_re{$net} = list2re @{$blacklist{$net}};
 	$exempt_accounts{$net} = $conf->{exempt_accounts};
+	$exempt_masks{$net} = $conf->{exempt_masks};
+	$exempt_masks_re{$net} = masks2re @{$exempt_masks{$net}};
 	$channel_properties{$net} = $conf->{channel_properties};
 	my $chan = $reporting_on{$net} = $conf->{reporting_on};
 
@@ -849,7 +889,7 @@ Irssi::signal_add 'event connected' => sub {
 Irssi::signal_add 'server disconnected' => sub {
 	my ($server) = @_;
 	my $net = $server->{chatnet};
-	delete $_->{$net} for \(%reporting_on, %privileged_accounts, %blacklist, %blacklist_re, %exempt_accounts, %channel_properties);
+	delete $_->{$net} for \(%reporting_on, %privileged_accounts, %blacklist, %blacklist_re, %exempt_accounts, %exempt_masks, %exempt_masks_re, %channel_properties);
 };
 
 Irssi::command_bind $IRSSI{name} => sub {
