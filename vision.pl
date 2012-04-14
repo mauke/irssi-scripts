@@ -77,7 +77,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -494,6 +494,8 @@ sub report_match {
 		s/^\{//, s/\}\z// for $t;
 		$t eq '$' ? '$' :
 		$t eq 'id' ? $rule->{id} :
+		$t eq 'nick' ? $sender->[0] :
+		$t eq 'user' ? $sender->[1] :
 		$t eq 'host' ? $sender->[2] :
 		defined $bonus->{$t} ? $bonus->{$t} :
 		''
@@ -773,8 +775,19 @@ for my $signal ('message public', 'message private') {
 		my $cfold = case_fold_for $server;
 
 		my $net = $server->{chatnet};
-		my $account = account_for($server, $nick) or return;
-		my $aflags = $privileged_accounts{$net}{$cfold->($account)} or return;
+		my $account = account_for($server, $nick);
+		my $aflags = !$account ? undef : $privileged_accounts{$net}{$cfold->($account)} or do {
+			if (!$target) {
+				report_match $server, {
+					severity => 'info',
+					id => 'privmsg',
+					format => '$user@$host told me: $msg',
+				}, [$nick, split(/\@/, $address, 2)], undef, {
+					msg => $msg,
+				};
+			}
+			return;
+		};
 
 		my $reply = sub { $server->command("msg $nick @_") };
 		if ($target) {
