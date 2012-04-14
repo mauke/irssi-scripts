@@ -835,19 +835,50 @@ for my $signal ('message public', 'message private') {
 
 		} elsif ($cmd eq 'exempt') {
 			$aflags =~ /o/ or return;
-			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
-				or return $reply->("usage: $cmd ACCOUNT");
-			$exempt_accounts{$net}{$cfold->($arg)} = 1;
-			rewrite_net_exempts $net;
-			$reply->("$arg exempted");
+			if (my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/) {
+				my $farg = $cfold->($arg);
+				$exempt_accounts{$net}{$farg}
+					and return $reply->("$arg is already exempted");
+				$exempt_accounts{$net}{$farg} = 1;
+				rewrite_net_exempts $net;
+				$reply->("$arg exempted");
+			} elsif (my ($nick, $user, $host) = $msg =~ /^([^\s!\@]+)!([^\s\@]+)\@([^\s]+)\s*\z/) {
+				$nick = $cfold->($nick);
+				$host = lc $host;
+				my $proto = "$nick!$user\@$host";
+				grep $_ eq $proto, @{$exempt_masks{$net} || []}
+					and return $reply->("$proto is already exempted");
+				push @{$exempt_masks{$net}}, $proto;
+				$exempt_masks_re{$net} = masks2re @{$exempt_masks{$net}};
+				rewrite_net_exempt_masks $net;
+				$reply->("$proto exempted");
+			} else {
+				$reply->("usage: $cmd ACCOUNT|MASK");
+			}
 
 		} elsif ($cmd eq 'inempt') {
 			$aflags =~ /o/ or return;
-			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
-				or return $reply->("usage: $cmd ACCOUNT");
-			delete $exempt_accounts{$net}{$cfold->($arg)};
-			rewrite_net_exempts $net;
-			$reply->("$arg inempted");
+			if (my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/) {
+				my $farg = $cfold->($arg);
+				$exempt_accounts{$net}{$farg}
+					or return $reply->("$arg isn't exempted yet");
+				delete $exempt_accounts{$net}{$farg};
+				rewrite_net_exempts $net;
+				$reply->("$arg inempted");
+			} elsif (my ($nick, $user, $host) = $msg =~ /^([^\s!\@]+)!([^\s\@]+)\@([^\s]+)\s*\z/) {
+				$nick = $cfold->($nick);
+				$host = lc $host;
+				my $proto = "$nick!$user\@$host";
+				my $em = $exempt_masks{$net} ||= [];
+				my @i = grep $_ eq $proto, 0 .. $#$em
+					or return $reply->("$proto isn't exempted yet");
+				splice @$em, $_, 1 for reverse @i;
+				$exempt_masks_re{$net} = masks2re @$em;
+				rewrite_net_exempt_masks $net;
+				$reply->("$proto inempted");
+			} else {
+				$reply->("usage: $cmd ACCOUNT|MASK");
+			}
 
 		} elsif ($cmd eq 'blacklist') {
 			$aflags =~ /o/ or return;
