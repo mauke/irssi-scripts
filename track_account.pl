@@ -8,7 +8,7 @@ use lib __DIR__ . "/lib";
 
 use again 'IrssiX::Util' => qw(esc case_fold_for require_script);
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -109,12 +109,13 @@ Irssi::signal_add 'message join-extended' => sub {
 	$accounts{$server->{tag}}{$fnick}{realname} = $realname;
 };
 
-Irssi::signal_add_first 'message part' => sub {
-	my ($server, $channel, $nick, $address, $reason) = @_;
+Irssi::signal_add_first 'event part' => sub {
+	my ($server, $data, $nick, $address) = @_;
 	my $tag = $server->{tag};
 	my $cfold = case_fold_for $server;
 	my $tree = $accounts{$tag};
 	my $fnick = $cfold->($nick);
+	my ($channel) = $data =~ /(\S+)/;
 	my $fchannel = $cfold->($channel);
 
 	my @onicks;
