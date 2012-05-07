@@ -8,7 +8,7 @@ use lib __DIR__ . "/lib";
 
 use again 'IrssiX::Util' => qw(esc case_fold_for require_script);
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -109,6 +109,42 @@ Irssi::signal_add 'message join-extended' => sub {
 	$accounts{$server->{tag}}{$fnick}{realname} = $realname;
 };
 
+sub mk_forget_in_channel {
+	my ($server, $channel) = @_;
+	my $tag = $server->{tag};
+	my $cfold = case_fold_for $server;
+	my $fchannel = $cfold->($channel);
+	my $tree = $accounts{$tag};
+
+	sub {
+		my ($nick) = @_;
+		my $fnick = $cfold->($nick);
+		$tree->{$fnick} or return;
+		my @existings = $server->nicks_get_same($nick);
+		while (my ($chan, undef) = splice @existings, 0, 2) {
+			if ($cfold->($chan->{name}) ne $fchannel) {
+				return;
+			}
+		}
+		purge_nick $server, $fnick;
+	}
+}
+
+Irssi::signal_add_first 'window item remove' => sub {
+	my ($window, $witem) = @_;
+	$witem->{type} eq 'CHANNEL' or return;
+	my $server = $witem->{server};
+
+	my $forget_in_channel = mk_forget_in_channel $server, $witem->{name};
+	my @onicks = map $_->{nick}, $witem->nicks;
+
+	Irssi::signal_continue @_;
+
+	for my $onick (@onicks) {
+		$forget_in_channel->($onick);
+	}
+};
+
 Irssi::signal_add_first 'event part' => sub {
 	my ($server, $data, $nick, $address) = @_;
 	my $tag = $server->{tag};
@@ -118,26 +154,18 @@ Irssi::signal_add_first 'event part' => sub {
 	my ($channel) = $data =~ /(\S+)/;
 	my $fchannel = $cfold->($channel);
 
+	my $forget_in_channel = mk_forget_in_channel $server, $channel;
 	my @onicks;
-	@onicks = map $_->{nick}, $server->channel_find($channel)->nicks if $fnick eq $cfold->($server->{nick});
+	if ($fnick eq $cfold->($server->{nick})) {
+		my $chanrec = $server->channel_find($channel) or return;
+		@onicks = map $_->{nick}, $chanrec->nicks;
+	}
 
 	Irssi::signal_continue @_;
 
-	my $forget_in_channel = sub {
-		my ($fnick) = @_;
-		$tree->{$fnick} or return;
-		my @existings = $server->nicks_get_same($nick);
-		while (my ($chan, undef) = splice @existings, 0, 2) {
-			if ($cfold->($chan->{name}) ne $fchannel) {
-				return;
-			}
-		}
-		purge_nick $server, $fnick;
-	};
-
 	$forget_in_channel->($fnick);
 	for my $onick (@onicks) {
-		$forget_in_channel->($cfold->($onick));
+		$forget_in_channel->($onick);
 	}
 };
 
