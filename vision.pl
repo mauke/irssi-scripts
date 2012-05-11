@@ -77,7 +77,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -679,7 +679,7 @@ sub generic_handler {
 						|| $msg->{sender}[2] ne $host
 					;
 					$matches++;
-					if ($matches >= $threshold) {
+					if ($matches >= $threshold - 1) {
 						$matched = 1;
 						last;
 					}
@@ -716,7 +716,7 @@ sub generic_handler {
 						|| $normalize->($msg->{data}) ne $canon
 					;
 					$matches++;
-					if ($matches >= $threshold) {
+					if ($matches >= $threshold - 1) {
 						$matched = 1;
 						add_to_temp_blacklist $rule->{id}, $canon, $now + 10 * 60;
 						last;
