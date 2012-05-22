@@ -77,7 +77,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -904,6 +904,19 @@ for my $signal ('message public', 'message private') {
 			$blacklist_re{$net} = list2re @{$blacklist{$net}};
 			rewrite_net_blacklist $net;
 			$reply->("$msg blacklisted");
+
+		} elsif ($cmd eq 'unblacklist') {
+			$aflags =~ /o/ or return;
+			$msg =~ /\S/
+				or return $reply->("usage: $cmd STRING");
+			my $str = lc $msg;
+			my $bl = $blacklist{$net} || [];
+			my @i = grep $str eq $bl->[$_], 0 .. $#$bl
+				or return $reply->("$msg is not blacklisted");
+			splice @$bl, $_, 1 for reverse @i;
+			$blacklist_re{$net} = list2re @$bl;
+			rewrite_net_blacklist $net;
+			$reply->("$msg unblacklisted");
 
 		} else {
 			$reply->("unknown command: $cmd");
