@@ -77,7 +77,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -432,12 +432,18 @@ sub rewrite_net_blacklist {
 	write_net_json_to $net, 'blacklist.json', \@{$blacklist{$net}};
 }
 
-sub rewrite_config {
-	rewrite_rules;
-	rewrite_net_exempts $_ for keys %exempt_accounts;
-	rewrite_net_exempt_masks $_ for keys %exempt_masks;
-	rewrite_net_blacklist $_ for keys %blacklist;
+sub rewrite_net_accounts {
+	my ($net) = @_;
+	write_net_json_to $net, 'accounts.json', \%{$privileged_accounts{$net}};
 }
+
+#sub rewrite_config {
+#	rewrite_rules;
+#	rewrite_net_exempts $_ for keys %exempt_accounts;
+#	rewrite_net_exempt_masks $_ for keys %exempt_masks;
+#	rewrite_net_blacklist $_ for keys %blacklist;
+#	rewrite_net_accounts $_ for keys %privileged_accounts;
+#}
 
 our %severity_level = (
 	debug => 0,
@@ -918,6 +924,51 @@ for my $signal ('message public', 'message private') {
 			rewrite_net_blacklist $net;
 			$reply->("$msg unblacklisted");
 
+		} elsif ($cmd eq 'flags') {
+			if ($msg =~ /^(\S+)\s*\z/) {
+				my $acct = $1;
+				$aflags =~ /z/ or return;
+				my $flags = $privileged_accounts{$net}{$cfold->($acct)} || '';
+				$reply->(
+					$flags ? "flags for $acct: $flags" :
+					"$acct has no flags"
+				);
+			} elsif ($msg =~ /^(\S+)\s+([+=]|(-))\s*([a-z]+|(?(3)\*))\s*\z/) {
+				my ($acct, $mode, $flags_mod) = ($1, $2, $4);
+				$aflags =~ /a/ or return;
+				my $flags = $privileged_accounts{$net}{$cfold->($acct)} || '';
+				if ($mode eq '-') {
+					if ($flags_mod eq '*') {
+						$flags = '';
+					} else {
+						$flags =~ s/[\Q$flags_mod\E]//g;
+					}
+				} elsif ($mode eq '+') {
+					$flags .= $flags_mod;
+				} else {
+					$flags = $flags_mod;
+				}
+				if ($flags) {
+					$flags = join '', sort split //, $flags;
+					$flags =~ tr[][]cs;
+					$privileged_accounts{$net}{$cfold->($acct)} = $flags;
+				} else {
+					delete $privileged_accounts{$net}{$cfold->($acct)};
+				}
+				rewrite_net_accounts $net;
+				$reply->("flags for $acct set to: $flags");
+
+			} else {
+				if ($aflags =~ /z/ && $aflags =~ /a/) {
+					return $reply->("usage: $cmd ACCOUNT | $cmd ACCOUNT [-+=] FLAGS");
+				} elsif ($aflags =~ /z/) {
+					return $reply->("usage: $cmd ACCOUNT");
+				} elsif ($aflags =~ /a/) {
+					return $reply->("usage: $cmd ACCOUNT [-+=] FLAGS");
+				} else {
+					return;
+				}
+			}
 		} else {
 			$reply->("unknown command: $cmd");
 		}
