@@ -78,7 +78,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -777,6 +777,7 @@ defgenhandler 'message part'       => 'part',     [0, 4, 2, 3, 1];
 defgenhandler 'message quit'       => 'quit',     [0, 3, 1, 2];
 defgenhandler 'message topic'      => 'topic',    [0, 2, 3, 4, 1];
 defgenhandler 'message irc notice' => 'notice',   [0 .. 4];
+defgenhandler 'message nick'       => 'nick',     [0, 1, 1, 3];
 defgenhandler 'ctcp action'        => 'action',   [0 .. 4];
 defgenhandler 'ctcp msg dcc'       => 'cdcc',     [0 .. 4];
 defgenhandler 'ctcp msg ping'      => 'cping',    [0 .. 4];
