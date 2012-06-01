@@ -30,8 +30,8 @@
 # * rules.json = [rule]
 #   rule = {
 #     id: unique string,
-#     type: (string) msg-re | strbl | nick | user | host | realname | sender |
-#                    nickspam | dnsbl | levenflood | floodqueue | splitflood,
+#     type: (string) msg-re | strbl | levenmatch | nick | user | host | realname |
+#                    sender | nickspam | dnsbl | levenflood | floodqueue | splitflood,
 #     severity: severity
 #     events: [event],
 #     format: string,
@@ -43,6 +43,7 @@
 #   rule_variant =
 #     <msg-re> re: regex string |
 #     <strbl> |
+#     <levenmatch> threshold: int, items: [string]
 #     <nick> str: string |
 #     <user> str: string |
 #     <host> str: string |
@@ -590,6 +591,18 @@ sub generic_handler {
 				my $net = $server->{chatnet};
 				if ($blacklist_re{$net} && lc($data) =~ /$blacklist_re{$net}/) {
 					$matched = 1;
+				}
+			} elsif ($type eq 'levenmatch') {
+				my $threshold = $rule->{threshold};
+				my $fdata = $cfold->($data);
+				for my $item (@{$rule->{items}}) {
+					my $d = Text::LevenshteinXS::distance $data, $cfold->($item);
+					if ($d > 0 && $d <= $threshold) {
+						$matched = 1;
+						$bonus{distance} = $d;
+						$bonus{matched} = $item;
+						last;
+					}
 				}
 			} elsif ($type eq 'nick') {
 				if ($cfold->($nick) eq $cfold->($rule->{str})) {
