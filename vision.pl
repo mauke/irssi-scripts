@@ -77,7 +77,7 @@ use again 'Text::LevenshteinXS' => [];
 use again 'Data::Munge' => qw(list2re); BEGIN { Data::Munge->VERSION('0.04') }
 use again 'List::Util' => qw(max);
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -782,7 +782,7 @@ for my $signal ('message public', 'message private') {
 
 		my $net = $server->{chatnet};
 		my $account = account_for($server, $nick);
-		my $aflags = !$account ? undef : $privileged_accounts{$net}{$cfold->($account)} or do {
+		my $aflags = !$account ? '' : $privileged_accounts{$net}{$cfold->($account)} or do {
 			if (!$target) {
 				report_match $server, {
 					severity => 'info',
@@ -792,7 +792,6 @@ for my $signal ('message public', 'message private') {
 					msg => $msg,
 				};
 			}
-			return;
 		};
 
 		my $reply = sub { $server->command("msg $nick @_") };
@@ -807,7 +806,13 @@ for my $signal ('message public', 'message private') {
 		$msg =~ s/^(\S+)\s*// or return;
 		my $cmd = $1;
 
-		if ($cmd eq 'mship' || $cmd eq 'channels') {
+		if ($cmd eq 'source') {
+			$reply->("https://github.com/mauke/irssi-scripts/blob/master/vision.pl");
+
+		} elsif ($cmd eq 'help') {
+			$reply->("sorry, help isn't available yet");
+
+		} elsif ($cmd eq 'mship' || $cmd eq 'channels') {
 			$aflags =~ /t/ or return;
 			my ($arg) = $msg =~ /^([a-zA-Z0-9\[\\\]\^_{|}~]+)\s*\z/
 				or return $reply->("usage: $cmd NICK");
