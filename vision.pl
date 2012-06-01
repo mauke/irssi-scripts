@@ -571,10 +571,6 @@ sub generic_handler {
 		($account && $exempt_accounts{$server->{chatnet}}{$cfold->($account)}) ||
 		($cfold->($nick) . '!' . $user . '@' . lc $host) =~ /$exempt_masks_re{$server->{chatnet}}/
 	) {
-		if ($event eq 'join') {
-			$data = "$nick!$user\@$host?$account#" . (realname_for($server, $nick) || '');
-		}
-
 		my @ids = @{$rules_by_event{$event} || []};
 
 		for my $rule (@rules{@ids}) {
@@ -765,7 +761,6 @@ sub defgenhandler {
 
 defgenhandler 'message public'     => 'public',   [0 .. 4];
 defgenhandler 'message part'       => 'part',     [0, 4, 2, 3, 1];
-defgenhandler 'message join'       => 'join',     [0, 2, 2, 3, 1];
 defgenhandler 'message quit'       => 'quit',     [0, 3, 1, 2];
 defgenhandler 'message topic'      => 'topic',    [0, 2, 3, 4, 1];
 defgenhandler 'message irc notice' => 'notice',   [0 .. 4];
@@ -773,6 +768,15 @@ defgenhandler 'ctcp action'        => 'action',   [0 .. 4];
 defgenhandler 'ctcp msg dcc'       => 'cdcc',     [0 .. 4];
 defgenhandler 'ctcp msg ping'      => 'cping',    [0 .. 4];
 defgenhandler 'ctcp msg version'   => 'cversion', [0 .. 4];
+
+Irssi::signal_add 'message join' => sub {
+	my ($server, $target, $nick, $address) = @_;
+	Irssi::signal_continue @_;
+	my $account = account_for($server, $nick) || '';
+	my $ext = "$nick!$address?$account#" . (realname_for($server, $nick) || '');
+	generic_handler 'join',     $server, $nick, $nick, $address, $target;
+	generic_handler 'join-ext', $server, $ext,  $nick, $address, $target;
+};
 
 for my $signal ('message public', 'message private') {
 	Irssi::signal_add $signal => sub {
