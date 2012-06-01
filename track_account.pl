@@ -8,7 +8,7 @@ use lib __DIR__ . "/lib";
 
 use again 'IrssiX::Util' => qw(esc case_fold_for require_script);
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 our %IRSSI = (
 	authors => 'mauke',
@@ -210,3 +210,47 @@ sub nicks_for {
 	my ($server, $account) = @_;
 	@{$nicks_by_account{$server->{tag}}{case_fold_for($server)->($account)} || []}
 }
+
+sub print_in {
+	my ($server, $witem) = @_;
+	$witem ? sub {
+		$witem->print(esc($_[0]), Irssi::MSGLEVEL_CLIENTCRAP);
+	} : sub {
+		$server->print('', esc($_[0]), Irssi::MSGLEVEL_CLIENTCRAP);
+	}
+}
+
+Irssi::command_bind 'nicks_for' => sub {
+	my ($data, $server, $witem) = @_;
+	$server or do {
+		Irssi::print esc "not connected to server";
+		return;
+	};
+	my $say = print_in $server, $witem;
+	my @accounts = $data =~ /\S+/g or do {
+		$say->("Usage: /nicks_for ACCOUNT [...]");
+		return;
+	};
+	for my $acct (@accounts) {
+		my @nicks = nicks_for $server, $acct;
+		$say->("$acct is on " . (@nicks ? "@nicks" : "<unknown>"));
+	}
+};
+
+Irssi::command_bind 'info_for' => sub {
+	my ($data, $server, $witem) = @_;
+	$server or do {
+		Irssi::print esc "not connected to server";
+		return;
+	};
+	my $say = print_in $server, $witem;
+	my @nicks = $data =~ /\S+/g or do {
+		$say->("Usage: /info_for NICK [...]");
+		return;
+	};
+	for my $nick (@nicks) {
+		my $acct = account_for $server, $nick;
+		my $real = realname_for $server, $nick;
+		$say->("$nick is on " . (defined $acct ? $acct : "<unknown>") . (defined $real ? " - $real" : ""));
+	}
+};
