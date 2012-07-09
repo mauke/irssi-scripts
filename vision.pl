@@ -548,6 +548,16 @@ sub report_match {
 	$server->command("^msg ${\join ',', @targets} $msg") if @targets;
 }
 
+sub normalize_ws {
+	my ($s) = @_;
+	for ($s) {
+		s/\s+/ /g;
+		s/^ //;
+		s/ \z//;
+	}
+	$s
+}
+
 sub generic_handler {
 	my ($event, $server, $data, $nick, $address, $target) = @_;
 	defined $address or return;
@@ -667,10 +677,11 @@ sub generic_handler {
 				$fchannel or next;
 				$levencheck = 1;
 
+				my $xdata = normalize_ws $data;
 				my $queue = $leven_history{$tag}{$fchannel}{$event};
 				my $matches = 0;
 				for my $msg (@$queue) {
-					my $d = Text::LevenshteinXS::distance $data, $msg->{data};
+					my $d = Text::LevenshteinXS::distance $xdata, normalize_ws $msg->{data};
 					next if $d > 4;
 					$matches++;
 					if ($matches >= 5) {
@@ -800,7 +811,7 @@ for my $signal ('message public', 'message private') {
 
 		my $net = $server->{chatnet};
 		my $account = account_for($server, $nick);
-		my $aflags = !$account ? '' : $privileged_accounts{$net}{$cfold->($account)} or do {
+		my $aflags = $account && $privileged_accounts{$net}{$cfold->($account)} || do {
 			if (!$target) {
 				report_match $server, {
 					severity => 'info',
@@ -810,6 +821,7 @@ for my $signal ('message public', 'message private') {
 					msg => $msg,
 				};
 			}
+			''
 		};
 
 		my $reply = sub { $server->command("msg $nick @_") };
