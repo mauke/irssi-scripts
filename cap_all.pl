@@ -9,6 +9,7 @@ use again 'MIME::Base64' => qw(encode_base64 decode_base64);
 use again 'Time::HiRes' => qw(time);
 
 use Irssi ();
+{ package Irssi::Nick; }
 
 our $VERSION = '0.03';
 
