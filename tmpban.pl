@@ -3,7 +3,7 @@ use strict;
 
 use Irssi ();
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 our %IRSSI = (
 	authors => 'mauke',
 	name => 'tmpban',
@@ -65,9 +65,15 @@ sub do_ban {
 	@masks or return;
 
 	$chan->command("mode +${\($mode x @masks)} @masks");
-	defined $timeout and Irssi::timeout_add_once(
+	return if !defined $timeout;
+
+	my $channame = $chan->{name};
+	my $server_tag = $chan->{server}{tag};
+	Irssi::timeout_add_once(
 		$timeout,
 		sub {
+			my $server = Irssi::server_find_tag($server_tag) or return;
+			my $chan = $server->channel_find($channame) or return;
 			if ($mode eq 'b') {
 				my %ban;
 				@ban{map $_->{ban}, $chan->bans} = ();
