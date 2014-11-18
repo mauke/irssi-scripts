@@ -1,17 +1,17 @@
 use warnings;
 use strict;
 
-use again 'Data::Munge' => qw(list2re);
-use again 'File::Open' => qw(fopen_nothrow fsysopen_nothrow);
-use again 'Errno';
-use again 'End';
-use again 'MIME::Base64' => qw(encode_base64 decode_base64);
-use again 'Time::HiRes' => qw(time);
+use Data::Munge qw(list2re);
+use File::Open qw(fopen_nothrow fsysopen_nothrow);
+use Errno ();
+use End;
+use MIME::Base64 qw(encode_base64 decode_base64);
+use Time::HiRes qw(time);
 
 use Irssi ();
 { package Irssi::Nick; }
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 our %IRSSI = (
 	authors => 'mauke',

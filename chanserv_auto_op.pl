@@ -6,9 +6,9 @@ use Irssi ();
 use Dir::Self;
 use lib __DIR__ . '/lib';
 
-use again 'IrssiX::Util' => qw(esc timer_add_once on_settings_change);
+use IrssiX::Util qw(esc timer_add_once on_settings_change);
 
-our $VERSION = '0.291';
+our $VERSION = '0.292';
 our %IRSSI = (
 	authors => 'mauke',
 	name => 'chanserv_auto_op',

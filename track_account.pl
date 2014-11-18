@@ -6,9 +6,9 @@ use Irssi ();
 use Dir::Self;
 use lib __DIR__ . "/lib";
 
-use again 'IrssiX::Util' => qw(esc case_fold_for require_script);
+use IrssiX::Util qw(esc case_fold_for require_script);
 
-our $VERSION = '0.08';
+our $VERSION = '0.081';
 
 our %IRSSI = (
 	authors => 'mauke',

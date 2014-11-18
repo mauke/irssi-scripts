@@ -6,15 +6,15 @@ use Irssi ();
 use Dir::Self;
 use lib __DIR__ . '/lib';
 
-our $VERSION = '0.05';
+our $VERSION = '0.051';
 
 our %IRSSI = (
 	name => 'whyban',
 	authors => 'mauke',
 );
 
-use again 'IrssiX::Util' => qw(esc puts);
-use again 'POSIX' => qw(strftime);
+use IrssiX::Util qw(esc puts);
+use POSIX qw(strftime);
 
 Irssi::Irc::Server::redirect_register
 	'mode q',
