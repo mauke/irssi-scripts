@@ -3,7 +3,7 @@ use strict;
 
 use Irssi ();
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 our %IRSSI = (
 	authors => 'mauke',
 	name => 'tmpban',
@@ -142,6 +142,7 @@ sub banninate {
 					splice @masks, $i, 1;
 					next;
 				};
+				$mask =~ s{\@gateway/.*/ip\.([0-9]+(?:\.[0-9]+){3})\z}{\@$1};
 			} elsif ($mask !~ /!./) {
 				$mask .= '*@*';
 			} elsif ($mask !~ /\@/) {
